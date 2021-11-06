@@ -93,8 +93,9 @@ async function buildPages(
 
     await fs.mkdir(destinationPath, { recursive: true });
 
+    // TODO: Move this into a separate process unrelated to making pages?
     if (page.assets) {
-      const sourceAssetsPath = path.join(sourcePath, page.assets);
+      const sourceAssetsPath = page.assets;
       const existsAssetsExist = await exists(sourceAssetsPath);
 
       if (existsAssetsExist) {
