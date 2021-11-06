@@ -1,19 +1,32 @@
 {
   "name": "static-build",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "version": "0.0.1",
+  "description": "Static site generator made for me",
+  "author": "Anthony Cossins",
+  "license": "MIT",
+  "main": "./bin/cli.js",
+  "bin": {
+    "static-build": "./bin/cli.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/anthonyec/static_build.git"
   },
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/anthonyec/static_build/issues"
+  "scripts": {
+    "build": "",
+    "watch": "",
+    "format": "prettier --loglevel warn --write '**/*.{js,json,jsx,md,css}'"
   },
-  "homepage": "https://github.com/anthonyec/static_build#readme"
+  "dependencies": {
+    "fdir": "^5.1.0",
+    "markdown-wasm": "^1.2.0",
+    "mustache": "^4.2.0",
+    "picomatch": "^2.3.0"
+  },
+  "devDependencies": {
+    "prettier": "^2.4.1"
+  },
+  "engines": {
+    "node": ">=17.0.1"
+  }
 }

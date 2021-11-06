@@ -1,0 +1,253 @@
+const fs = require('fs/promises');
+const path = require('path');
+const EventEmitter = require('events');
+const performance = require('perf_hooks').performance;
+const http = require('http');
+const mustache = require('mustache');
+
+require('./types');
+const { exists } = require('./lib/utils');
+const buildFunctions = require('./lib/build');
+
+function requireUncached(module) {
+  delete require.cache[require.resolve(module)];
+  return require(module);
+}
+
+async function resetDistDirectory(filePath) {
+  const doesDistExist = await exists(filePath);
+
+  if (doesDistExist) {
+    await fs.rm(filePath, { recursive: true });
+  }
+
+  await fs.mkdir(filePath);
+}
+
+async function getUserConfig(sourcePath) {
+  const DEFAULT_CONFIG = {
+    getPages: () => [],
+    getPageVariables: () => {},
+    postBuild: () => {}
+  };
+
+  const configPath = path.join(sourcePath, 'config.js');
+  const doesConfigPathExist = await exists(configPath);
+
+  if (!doesConfigPathExist) {
+    return DEFAULT_CONFIG;
+  }
+
+  return {
+    ...DEFAULT_CONFIG,
+    ...requireUncached(configPath)
+  };
+}
+
+// TODO: Rename to something that is both layouts and partials.
+async function getPartials(sourcePath, name) {
+  const partialsPath = path.join(sourcePath, `_${name}`);
+
+  const doesSourcePathExist = await exists(partialsPath);
+
+  if (!doesSourcePathExist) {
+    return {};
+  }
+
+  const partialFiles = await fs.readdir(partialsPath);
+  const partials = {};
+
+  for await (const partialFileName of partialFiles) {
+    const baseName = path.basename(partialFileName);
+    const ext = path.extname(partialFileName);
+    const name = baseName.replace(ext, '');
+
+    partials[name] = await fs.readFile(
+      path.join(partialsPath, baseName),
+      'utf8'
+    );
+  }
+
+  return partials;
+}
+
+/**
+ * Takes an array of pages and builds files out of them in the correct directory structure.
+ * @param {Page[]} pages - Array of pages
+ * @param {Object} globalView - Mustache global view variables
+ * @param {Object} layouts - Mustache includes for layouts
+ * @param {Object} partials - Mustache includes for partials
+ * @returns {void}
+ */
+async function buildPages(
+  sourcePath,
+  distPath,
+  pages = [],
+  globalView = {},
+  layouts = {},
+  partials = {}
+) {
+  for await (const page of pages) {
+    const destinationPath = path.join(distPath, page.path);
+    const isExtensionNameInSlug = page.slug ? !!path.extname(page.slug) : false;
+
+    await fs.mkdir(destinationPath, { recursive: true });
+
+    if (page.assets) {
+      const sourceAssetsPath = path.join(sourcePath, page.assets);
+      const existsAssetsExist = await exists(sourceAssetsPath);
+
+      if (existsAssetsExist) {
+        await fs.cp(sourceAssetsPath, destinationPath, { recursive: true });
+      } else {
+        console.warn(`Warning: Assets do not exist ${sourceAssetsPath}`);
+      }
+    }
+
+    const view = {
+      page,
+      ...globalView,
+      ...globalView.getPageVariables(globalView.site, page)
+    };
+
+    const layout = page.layout && layouts[page.layout];
+    const content = layout ? layout : page.content;
+    const renderedPage = mustache.render(content, view, partials);
+
+    const outputPath = isExtensionNameInSlug
+      ? path.join(destinationPath, page.slug)
+      : path.join(destinationPath, 'index.html');
+
+    await fs.writeFile(outputPath, renderedPage, 'utf8');
+  }
+}
+
+function getCollectionsFromPages(pages = []) {
+  return pages.reduce((acc, page) => {
+    if (page.collection) {
+      if (!acc[page.collection]) {
+        acc[page.collection] = [page];
+      } else {
+        acc[page.collection].push(page);
+      }
+    }
+
+    if (!page.collection) {
+      if (!acc['pages']) {
+        acc['pages'] = {};
+      }
+
+      // TODO: Remove first `/` slash at start of slug.
+      acc['pages'][page.slug] = page;
+    }
+
+    return acc;
+  }, {});
+}
+
+/**
+ * Take built pages and turn into files.
+ */
+async function compile(sourcePath, destinationPath) {
+  performance.mark('build_start');
+
+  await resetDistDirectory(destinationPath);
+
+  const partials = await getPartials(sourcePath, 'partials');
+  const layouts = await getPartials(sourcePath, 'layouts');
+
+  const config = await getUserConfig(sourcePath);
+
+  const pagesToBuild = await config.getPages(buildFunctions);
+  const collections = getCollectionsFromPages(pagesToBuild);
+  const globalView = { ...config, ...collections };
+
+  await buildPages(
+    sourcePath,
+    destinationPath,
+    pagesToBuild,
+    globalView,
+    layouts,
+    partials
+  );
+
+  // TODO: Temp solution until I do proper asset copying.
+  await config.postBuild(sourcePath, destinationPath);
+
+  performance.mark('build_end');
+}
+
+async function watch(sourcePath, callback) {
+  try {
+    const watcher = fs.watch(sourcePath, {
+      recursive: true
+    });
+
+    for await (const event of watcher) {
+      await callback(null, event);
+    }
+  } catch (err) {
+    await callback(err, null);
+  }
+}
+
+function logPerformanceMeasurements() {
+  performance.measure('build', 'build_start', 'build_end');
+
+  const measurements = performance.getEntriesByType('measure');
+
+  measurements.forEach((measurement) => {
+    console.log(`${measurement.name}:`, measurement.duration.toFixed(2));
+  });
+}
+
+function startWatchCompile(sourcePath, destinationPath, options) {
+  const events = new EventEmitter();
+
+  watch(sourcePath, async (err, event) => {
+    if (err) {
+      return console.error(err);
+    }
+
+    console.log(`${event.eventType}:`, event.filename);
+
+    await compile(sourcePath, destinationPath);
+    logPerformanceMeasurements();
+
+    // TODO: Make a thing that checks all files have been made?
+    setTimeout(() => events.emit('change'), 300);
+  });
+
+  http
+    .createServer(function (request, response) {
+      events.once('change', () => {
+        response.writeHead(200);
+        response.end();
+      });
+    })
+    .listen(9876);
+}
+
+/**
+ * Build website!
+ *
+ * @param {string} sourcePath - Source path
+ * @param {string} destinationPath - Destination path
+ * @param {object} options - Options
+ * @returns {void}
+ */
+async function staticBuild(sourcePath, destinationPath, options = {}) {
+  try {
+    await compile(sourcePath, destinationPath);
+    logPerformanceMeasurements();
+  } catch (err) {
+    return console.error('Error:', err);
+  }
+
+  if (options.watch) {
+    console.log('👀 watching for changes');
+    startWatchCompile(sourcePath, destinationPath, options);
+  }
+}
+
+module.exports = staticBuild;
