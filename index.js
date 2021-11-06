@@ -80,7 +80,6 @@ async function getPartials(sourcePath, name) {
  * @returns {void}
  */
 async function buildPages(
-  sourcePath,
   distPath,
   pages = [],
   globalView = {},
@@ -164,7 +163,6 @@ async function compile(sourcePath, destinationPath) {
   const globalView = { ...config, ...collections };
 
   await buildPages(
-    sourcePath,
     destinationPath,
     pagesToBuild,
     globalView,
@@ -178,19 +176,7 @@ async function compile(sourcePath, destinationPath) {
   performance.mark('build_end');
 }
 
-async function watch(sourcePath, callback) {
-  try {
-    const watcher = fs.watch(sourcePath, {
-      recursive: true
-    });
 
-    for await (const event of watcher) {
-      await callback(null, event);
-    }
-  } catch (err) {
-    await callback(err, null);
-  }
-}
 
 function logPerformanceMeasurements() {
   performance.measure('build', 'build_start', 'build_end');
