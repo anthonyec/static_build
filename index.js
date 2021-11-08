@@ -6,7 +6,7 @@ const http = require('http');
 const mustache = require('mustache');
 
 require('./types');
-const { exists } = require('./lib/utils');
+const { exists, watch } = require('./lib/utils');
 const buildFunctions = require('./lib/build');
 
 function requireUncached(module) {
