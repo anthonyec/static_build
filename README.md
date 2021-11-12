@@ -1,6 +1,6 @@
-# Static Build
+# Do Not Use This - Static Site Generator
 
-> Basic static website generator made because I couldn't get Jekyll to work.
+> It's not for you! It's for my website.
 
 ## Requirements
 
