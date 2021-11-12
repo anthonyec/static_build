@@ -1,13 +1,3 @@
-# Do Not Use This - Static Site Generator
+# Static Build - SSG
 
-> It's not for you! It's for my website.
-
-## Requirements
-
-## API
-
-### Sourcing
-
-### Variables
-
-## Docs
+> It's not for you!
