@@ -195,11 +195,9 @@ function startWatchCompile(sourcePath, destinationPath, options) {
 
   fileWatcher.on('change', async () => {
     fileWatcher.pause();
-
     await compile(sourcePath, destinationPath);
     logPerformanceMeasurements();
     hotReload.reload(300);
-
     fileWatcher.resume();
   });
 
