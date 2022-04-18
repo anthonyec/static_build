@@ -1,13 +1,13 @@
 const fs = require('fs/promises');
 const path = require('path');
-const EventEmitter = require('events');
 const performance = require('perf_hooks').performance;
-const http = require('http');
 const mustache = require('mustache');
 
 require('./types');
-const { exists, watch } = require('./lib/utils');
+const { exists } = require('./lib/utils');
 const buildFunctions = require('./lib/build');
+const createHotReload = require('./lib/hot_reload');
+const createFileWatcher = require('./lib/file_watcher');
 
 function requireUncached(module) {
   delete require.cache[require.resolve(module)];
@@ -95,9 +95,9 @@ async function buildPages(
     // TODO: Move this into a separate process unrelated to making pages?
     if (page.assets) {
       const sourceAssetsPath = page.assets;
-      const existsAssetsExist = await exists(sourceAssetsPath);
+      const assetsDirectoryExists = await exists(sourceAssetsPath);
 
-      if (existsAssetsExist) {
+      if (assetsDirectoryExists) {
         await fs.cp(sourceAssetsPath, destinationPath, { recursive: true });
       } else {
         console.warn(`Warning: Assets do not exist ${sourceAssetsPath}`);
@@ -176,8 +176,6 @@ async function compile(sourcePath, destinationPath) {
   performance.mark('build_end');
 }
 
-
-
 function logPerformanceMeasurements() {
   performance.measure('build', 'build_start', 'build_end');
 
@@ -186,33 +184,27 @@ function logPerformanceMeasurements() {
   measurements.forEach((measurement) => {
     console.log(`${measurement.name}:`, measurement.duration.toFixed(2));
   });
+
+  // This will stop a history of performance measures being logged out.
+  performance.clearMeasures();
 }
 
 function startWatchCompile(sourcePath, destinationPath, options) {
-  const events = new EventEmitter();
+  const hotReload = createHotReload();
+  const fileWatcher = createFileWatcher(sourcePath);
 
-  watch(sourcePath, async (err, event) => {
-    if (err) {
-      return console.error(err);
-    }
-
-    console.log(`${event.eventType}:`, event.filename);
+  fileWatcher.on('change', async () => {
+    fileWatcher.pause();
 
     await compile(sourcePath, destinationPath);
     logPerformanceMeasurements();
+    hotReload.reload(300);
 
-    // TODO: Make a thing that checks all files have been made?
-    setTimeout(() => events.emit('change'), 300);
+    fileWatcher.resume();
   });
 
-  http
-    .createServer(function (request, response) {
-      events.once('change', () => {
-        response.writeHead(200);
-        response.end();
-      });
-    })
-    .listen(9876);
+  hotReload.start();
+  fileWatcher.start();
 }
 
 /**
@@ -226,7 +218,7 @@ function startWatchCompile(sourcePath, destinationPath, options) {
 async function staticBuild(sourcePath, destinationPath, options = {}) {
   try {
     await compile(sourcePath, destinationPath);
-    logPerformanceMeasurements();
+    // logPerformanceMeasurements();
   } catch (err) {
     return console.error('Error:', err);
   }
