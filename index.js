@@ -216,7 +216,7 @@ function startWatchCompile(sourcePath, destinationPath, options) {
 async function staticBuild(sourcePath, destinationPath, options = {}) {
   try {
     await compile(sourcePath, destinationPath);
-    // logPerformanceMeasurements();
+    logPerformanceMeasurements();
   } catch (err) {
     return console.error('Error:', err);
   }
